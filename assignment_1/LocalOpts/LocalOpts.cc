@@ -1,15 +1,8 @@
 // ECE-5984 S21 Assignment 1: LocalOpts.cpp
 // PID: rishiranjan
 ////////////////////////////////////////////////////////////////////////////////
-#include "llvm/Pass.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/InstVisitor.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/ValueMap.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Analysis/CallGraph.h"
-#include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+
+#include "utils.hpp"
 
 #include <iostream>
 #include <set>
@@ -18,76 +11,6 @@ using namespace llvm;
 
 namespace
 {
-    // Helpler function to check if the instruction is an Add Inst
-    bool isAddInst(unsigned int opcode)
-    {
-        bool ret;
-        switch (opcode)
-        {
-        case Instruction::Add:
-            ret = true;
-            break;
-        default:
-            ret = false;
-            break;
-        }
-
-        return ret;
-    }
-
-    // Helpler function to check if the instruction is a Sub Inst
-    bool isSubInst(unsigned int opcode)
-    {
-        bool ret;
-        switch (opcode)
-        {
-        case Instruction::Sub:
-            ret = true;
-            break;
-        default:
-            ret = false;
-            break;
-        }
-
-        return ret;
-    }
-
-    // Helpler function to check if the instruction is a Mul Inst
-    bool isMulInst(unsigned int opcode)
-    {
-        bool ret;
-        switch (opcode)
-        {
-        case Instruction::Mul:
-            ret = true;
-            break;
-        default:
-            ret = false;
-            break;
-        }
-
-        return ret;
-    }
-
-    // Helpler function to check if the instruction is a Division Inst
-    bool isDivInst(unsigned int opcode)
-    {
-        bool ret;
-        switch (opcode)
-        {
-        case Instruction::SDiv:
-            ret = true;
-            break;
-        case Instruction::UDiv:
-            ret = true;
-            break;
-        default:
-            ret = false;
-            break;
-        }
-
-        return ret;
-    }
 
     /**
      * @brief We implement the following algebraic identities in this optimization
@@ -180,34 +103,6 @@ namespace
         return false;
     }
 
-    // This is a helper function to get the result of a constant expression
-    Constant *getConstExprResult(ConstantInt *firstOperand, ConstantInt *secondOperand, unsigned int opcode, Type *type)
-    {
-        switch (opcode)
-        {
-        case Instruction::Add:
-            return ConstantInt::get(type, firstOperand->getValue() + secondOperand->getValue());
-            break;
-
-        case Instruction::Sub:
-            return ConstantInt::get(type, firstOperand->getValue() - secondOperand->getValue());
-            break;
-
-        case Instruction::Mul:
-            return ConstantInt::get(type, firstOperand->getValue() * secondOperand->getValue());
-            break;
-        case Instruction::SDiv:
-            return ConstantInt::get(type, firstOperand->getValue().sdiv(secondOperand->getValue()));
-            break;
-        case Instruction::UDiv:
-            return ConstantInt::get(type, firstOperand->getValue().udiv(secondOperand->getValue()));
-            break;
-
-        default:
-            break;
-        }
-    }
-
     // This map holds all the constants we have encountered so far
     ValueMap<Value *, ConstantInt *> consts;
 
@@ -252,17 +147,14 @@ namespace
             {
                 // Both the operands are constant
                 auto val = getConstExprResult(firstOperand, secondOperand, inst.getOpcode(), inst.getType());
-                inst.replaceAllUsesWith(val);
-                return true;
+                if (val != nullptr)
+                {
+                    inst.replaceAllUsesWith(val);
+                    return true;
+                }
             }
         }
         return false;
-    }
-
-    // Helper function to check if a number is a power of two
-    bool isPowerOfTwo(unsigned int num)
-    {
-        return (num & (num - 1)) == 0 ? true : false;
     }
 
     /**
@@ -350,7 +242,7 @@ namespace
 
             for (auto &bb : F)
             {
-                SmallVector<Instruction *, 10> toRemove;
+                SmallVector<Instruction *, 10> instToRemove;
                 for (auto &inst : bb)
                 {
                     bool remove = constFolding(inst);
@@ -374,19 +266,21 @@ namespace
                         ++numConstFolding;
                     }
                     if (remove)
-                        toRemove.push_back(&inst);
+                        instToRemove.push_back(&inst);
                 }
 
-                for (size_t i = 0; i < toRemove.size(); ++i)
+                // We can only delete instructions from a basic block after we have
+                // traversed though every instructions in the basic block.
+                for (size_t i = 0; i < instToRemove.size(); ++i)
                 {
 
-                    toRemove[i]->eraseFromParent();
+                    instToRemove[i]->eraseFromParent();
                 }
             }
 
-            outs() << "Algebraic Identity : " << numAlgebraicIdentity << "\n";
-            outs() << "Strength Reduction : " << numStrengthReduction << "\n";
-            outs() << "Constant Folding : " << numConstFolding << "\n";
+            outs() << "Algebraic Identity optimised : " << numAlgebraicIdentity << "\n";
+            outs() << "Strength Reduction performed : " << numStrengthReduction << "\n";
+            outs() << "Constant Folding performed : " << numConstFolding << "\n";
 
             return true;
         }
